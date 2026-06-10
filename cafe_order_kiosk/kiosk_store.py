@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import random
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from cafe_order_kiosk.models import MenuItem, Order, OrderItem, OrderStatus, Payment
 from cafe_order_kiosk.utils import utc_now
@@ -17,10 +19,18 @@ DEFAULT_MENU: tuple[MenuItem, ...] = (
     MenuItem(id=9, name="Blueberry Muffin", price=3200, category="bakery"),
     MenuItem(id=10, name="Cheesecake", price=5200, category="dessert"),
 )
-
+RANDOM_DISCOUNT_RATES: tuple[int, ...] = (5, 10, 15, 20)
+#할인율 경우의 수
+#랜덤 할인 메뉴의 정보를 담는 객체
+@dataclass(frozen=True)
+class RandomDiscountMenuResult:
+    menu_item: MenuItem
+    discount_rate: int
+    original_price: int
+    discounted_price: int
 
 class KioskStore:
-    def __init__(self, menu_items: Iterable[MenuItem] | None = None) -> None:
+    def __init__(self, menu_items: Iterable[MenuItem] | None = None ) -> None:
         self._menu: dict[int, MenuItem] = {item.id: item for item in (menu_items or [])}
         self._orders: dict[int, Order] = {}
         self._next_order_id = 1
@@ -83,6 +93,52 @@ class KioskStore:
         )
         order.items.append(order_item)
         return order
+
+    def draw_random_discount_menu(self) -> RandomDiscountMenuResult:
+        """
+        메뉴 중 하나와 할인율을 랜덤으로 뽑아 추천 결과를 만듬
+        주문에 바로 추가하지 않고 추천 결과만 반환
+        사용자에게 추가 여부를 확인
+        """
+        available_items = self.list_menu(only_available=True)
+        if not available_items:
+            raise ValueError("No available menu items")
+
+        menu_item = random.choice(available_items)
+        discount_rate = random.choice(RANDOM_DISCOUNT_RATES)
+        discounted_price = menu_item.price * (100 - discount_rate) // 100
+
+        return RandomDiscountMenuResult(
+            menu_item=menu_item,
+            discount_rate=discount_rate,
+            original_price=menu_item.price,
+            discounted_price=discounted_price,
+        )
+
+    def add_discounted_menu(
+        self,
+        order_id: int,
+        result: RandomDiscountMenuResult,
+    ) -> None:
+        """
+         추천 결과를 현재 주문에 할인된 가격으로 추가
+        """
+        order = self._require_order(order_id)
+
+        if order.status is not OrderStatus.OPEN:
+            raise ValueError("Order is not open")
+
+        order_item = OrderItem(
+            menu_item_id=result.menu_item.id,
+            name=f"{result.menu_item.name} (오늘의 랜덤 할인)",
+            unit_price=result.discounted_price,
+            quantity=1,
+            options=[
+                f"{result.discount_rate}% 할인",
+                f"원가 {result.original_price}원",
+            ],
+        )
+        order.items.append(order_item)
 
     def remove_item(self, order_id: int, line_index: int) -> Order:
         order = self._require_order(order_id)

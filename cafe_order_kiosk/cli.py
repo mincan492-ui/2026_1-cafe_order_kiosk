@@ -43,6 +43,8 @@ def run_cli() -> int:
             handle_order(store, state, args)
         elif command in {"주문목록", "orders"}:
             handle_orders(store, args)
+        elif command in {"오늘추천", "today pick"}:
+            handle_today_pick(store, state)
         elif command in {"결제", "pay"}:
             handle_pay(store, state, args)
         else:
@@ -61,6 +63,7 @@ def print_help() -> None:
     print("\t주문 조회")
     print("\t주문 취소")
     print("\t주문목록 목록 [진행중|결제완료|취소]")
+    print("\t오늘의 추천")
     print("\t결제 <방법> [금액]")
     print("\t도움말")
     print("\t종료")
@@ -179,6 +182,36 @@ def handle_orders(store: KioskStore, args: list[str]) -> None:
             f"  #{order.id} {format_status(order.status)} - {format_money(order.total)}"
         )
 
+def handle_today_pick(store: KioskStore, state: CLIState) -> None:
+    if state.current_order_id is None:
+        print("선택된 주문이 없습니다. 먼저 '주문 생성'을 사용하세요.")
+        return
+
+    try:
+        result = store.draw_random_discount_menu()
+    except ValueError as exc:
+        print(str(exc))
+        return
+
+    print("[오늘의 랜덤 할인 메뉴]")
+    print(f"추천 메뉴: {result.menu_item.name}")
+    print(f"할인율: {result.discount_rate}%")
+    print(f"원래 가격: {format_money(result.original_price)}")
+    print(f"할인 가격: {format_money(result.discounted_price)}")
+
+    answer = input("이 메뉴를 현재 주문에 추가하시겠습니까? (y/n): ").strip().lower()
+
+    if answer not in {"y", "yes", "예", "네"}:
+        print("오늘의 랜덤 할인 메뉴 추가를 취소했습니다.")
+        return
+
+    try:
+        store.add_discounted_menu(state.current_order_id, result)
+    except ValueError as exc:
+        print(str(exc))
+        return
+
+    print("현재 주문에 오늘의 랜덤 할인 메뉴가 추가되었습니다.")
 
 def handle_pay(store: KioskStore, state: CLIState, args: list[str]) -> None:
     if state.current_order_id is None:
